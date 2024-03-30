@@ -1,7 +1,29 @@
 import axios, { AxiosResponse } from '@ohos/axios';
 import image from '@ohos.multimedia.image';
+// ----------------------------------------------------------------------
+type PromiseState = 'resolved' | 'rejected' | 'pending';
+class Deferred<T, E> {
+  reject: (error: E) => void = (_: E) => {};
+  resolve: (data: T) => void = (_: T) => {};
+  state: PromiseState;
+  readonly promise: Promise<T>;
+  constructor() {
+    this.state = 'pending';
+    this.promise = new Promise((resolve, reject) => {
+      this.resolve = (data: T) => {
+        this.state = 'resolved';
+        resolve(data);
+      };
+      this.reject = (error: E) => {
+        this.state = 'rejected';
+        reject(error);
+      };
+    });
+  }
+}
+// ----------------------------------------------------------------------
 @Observed
-export class Ref<T> {
+class Ref<T> {
   public value?: T;
   constructor(value?: T) {
     this.value = value;
@@ -15,6 +37,7 @@ export class Ref<T> {
     return String(this.value);
   }
 }
+// ----------------------------------------------------------------------
 @Observed
 class Vector {
   x: number = Infinity;
@@ -44,6 +67,11 @@ class Vector {
     return this;
   }
 }
+// ----------------------------------------------------------------------
+interface PictureInitData {
+  pixelMap: PixelMap;
+  info: image.ImageInfo;
+}
 @Component
 struct Picture {
   @State private newScale: number = 1;
@@ -52,6 +80,9 @@ struct Picture {
   @State private oldPan: Vector = new Vector();
   @State private newPan: Vector = new Vector();
   @State private thumbnailPixelMap: Ref<PixelMap> = new Ref();
+  @State private thumbnailImgInfo: Ref<image.ImageInfo> = new Ref();
+  private initDefer: Deferred<PictureInitData, Error> = new Deferred();
+  private initPromise: Promise<PictureInitData> = this.initDefer.promise;
 
   @Prop currentIndex: number;
   @Prop isOnSwiperAnimation: boolean;
@@ -67,6 +98,20 @@ struct Picture {
       return image.createImageSource(response.data).createPixelMap();
     }).then((thumbnailPixelMap: PixelMap) => {
       this.thumbnailPixelMap.value = thumbnailPixelMap;
+      return thumbnailPixelMap.getImageInfo();
+    }).then((thumbnailImgInfo: image.ImageInfo) => {
+      this.thumbnailImgInfo = thumbnailImgInfo;
+    }).then(() => {
+      if (this.thumbnailPixelMap.value && this.thumbnailImgInfo.value) {
+        this.initDefer.resolve({
+          pixelMap: this.thumbnailPixelMap.value,
+          info: this.thumbnailImgInfo.value
+        });
+      } else {
+        this.initDefer.reject(new Error('初始化未完成'));
+      }
+    }, (err: Error) => {
+      this.initDefer.reject(err);
     });
   }
   build() {
