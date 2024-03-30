@@ -1,3 +1,20 @@
+import axios, { AxiosResponse } from '@ohos/axios';
+import image from '@ohos.multimedia.image';
+@Observed
+export class Ref<T> {
+  public value?: T;
+  constructor(value?: T) {
+    this.value = value;
+  }
+  toString(): string {
+    if (typeof this.value == 'object') {
+      try {
+        return JSON.stringify(this.value);
+      } catch (err) {}
+    }
+    return String(this.value);
+  }
+}
 @Observed
 class Vector {
   x: number = Infinity;
@@ -34,6 +51,7 @@ struct Picture {
   @State private scaleOrigin: Vector = new Vector();
   @State private oldPan: Vector = new Vector();
   @State private newPan: Vector = new Vector();
+  @State private thumbnailPixelMap: Ref<PixelMap> = new Ref();
 
   @Prop currentIndex: number;
   @Prop isOnSwiperAnimation: boolean;
@@ -45,46 +63,53 @@ struct Picture {
     this.scaleOrigin.zero();
     this.oldPan.zero();
     this.newPan.zero();
+    axios.get<ArrayBuffer>(this.thumbnailUrl).then((response: AxiosResponse<ArrayBuffer>): Promise<PixelMap> => {
+      return image.createImageSource(response.data).createPixelMap();
+    }).then((thumbnailPixelMap: PixelMap) => {
+      this.thumbnailPixelMap.value = thumbnailPixelMap;
+    });
   }
   build() {
-    Image(this.thumbnailUrl)
-      .border({ width: 1, color: Color.Black, style: BorderStyle.Solid })
-      .padding(0)
-      .margin(0)
-      .width('100%')
-      .objectFit(ImageFit.Contain)
-      .backgroundColor(Color.Transparent)
-      .fitOriginalSize(true)
-      .scale({
-        x: this.newScale,
-        y: this.newScale,
-        centerX: this.scaleOrigin.x,
-        centerY: this.scaleOrigin.y
-      })
-      .translate({
-        x: this.newPan.x,
-        y: this.newPan.y
-      })
-      .parallelGesture(GestureGroup(
-        GestureMode.Parallel,
-        PinchGesture().onActionUpdate((event: GestureEvent) => {
-          if (!event.repeat && !this.isOnSwiperAnimation) {
-            this.newScale = this.oldScale * event.scale;
-            this.scaleOrigin.set(event.pinchCenterX, event.pinchCenterY);
-          }
-        }).onActionEnd(() => {
-          this.oldScale = this.newScale;
-        }),
-        PanGesture().onActionUpdate((event: GestureEvent) => {
-          if (!event.repeat && !this.isOnSwiperAnimation) {
-            this.newPan.copyFrom(this.oldPan.add(new Vector(event.offsetX, event.offsetY)));
-          }
-        }).onActionEnd(() => {
-          if (!this.isOnSwiperAnimation) {
-            this.oldPan.copyFrom(this.newPan);
-          }
+    if (this.thumbnailPixelMap.value) {
+      Image(this.thumbnailPixelMap.value)
+        .border({ width: 1, color: Color.Black, style: BorderStyle.Solid })
+        .padding(0)
+        .margin(0)
+        .width('100%')
+        .objectFit(ImageFit.Contain)
+        .backgroundColor(Color.Transparent)
+        .fitOriginalSize(true)
+        .scale({
+          x: this.newScale,
+          y: this.newScale,
+          centerX: this.scaleOrigin.x,
+          centerY: this.scaleOrigin.y
         })
-      ))
+        .translate({
+          x: this.newPan.x,
+          y: this.newPan.y
+        })
+        .parallelGesture(GestureGroup(
+          GestureMode.Parallel,
+          PinchGesture().onActionUpdate((event: GestureEvent) => {
+            if (!event.repeat && !this.isOnSwiperAnimation) {
+              this.newScale = this.oldScale * event.scale;
+              this.scaleOrigin.set(event.pinchCenterX, event.pinchCenterY);
+            }
+          }).onActionEnd(() => {
+            this.oldScale = this.newScale;
+          }),
+          PanGesture().onActionUpdate((event: GestureEvent) => {
+            if (!event.repeat && !this.isOnSwiperAnimation) {
+              this.newPan.copyFrom(this.oldPan.add(new Vector(event.offsetX, event.offsetY)));
+            }
+          }).onActionEnd(() => {
+            if (!this.isOnSwiperAnimation) {
+              this.oldPan.copyFrom(this.newPan);
+            }
+          })
+        ))
+    }
   }
 }
 @Entry
