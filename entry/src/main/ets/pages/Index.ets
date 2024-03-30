@@ -72,6 +72,17 @@ interface PictureInitData {
   pixelMap: PixelMap;
   info: image.ImageInfo;
 }
+interface ImageCompleteEvent {
+  width: number;
+  height: number;
+  componentWidth: number;
+  componentHeight: number;
+  loadingStatus: number;
+  contentWidth: number;
+  contentHeight: number;
+  contentOffsetX: number;
+  contentOffsetY: number;
+}
 @Component
 struct Picture {
   @State private newScale: number = 1;
@@ -79,82 +90,65 @@ struct Picture {
   @State private scaleOrigin: Vector = new Vector();
   @State private oldPan: Vector = new Vector();
   @State private newPan: Vector = new Vector();
-  @State private thumbnailPixelMap: Ref<PixelMap> = new Ref();
-  @State private thumbnailImgInfo: Ref<image.ImageInfo> = new Ref();
-  private initDefer: Deferred<PictureInitData, Error> = new Deferred();
-  private initPromise: Promise<PictureInitData> = this.initDefer.promise;
 
   @Prop currentIndex: number;
   @Prop isOnSwiperAnimation: boolean;
   myIndex: number = 0;
   thumbnailUrl: string = '';
 
+  async init(event: ImageCompleteEvent) {
+    console.info('[Picture][init]', JSON.stringify(event));
+  }
   aboutToAppear(): void {
     this.newScale = this.oldScale = 1;
     this.scaleOrigin.zero();
     this.oldPan.zero();
     this.newPan.zero();
-    axios.get<ArrayBuffer>(this.thumbnailUrl).then((response: AxiosResponse<ArrayBuffer>): Promise<PixelMap> => {
-      return image.createImageSource(response.data).createPixelMap();
-    }).then((thumbnailPixelMap: PixelMap) => {
-      this.thumbnailPixelMap.value = thumbnailPixelMap;
-      return thumbnailPixelMap.getImageInfo();
-    }).then((thumbnailImgInfo: image.ImageInfo) => {
-      this.thumbnailImgInfo = thumbnailImgInfo;
-    }).then(() => {
-      if (this.thumbnailPixelMap.value && this.thumbnailImgInfo.value) {
-        this.initDefer.resolve({
-          pixelMap: this.thumbnailPixelMap.value,
-          info: this.thumbnailImgInfo.value
-        });
-      } else {
-        this.initDefer.reject(new Error('初始化未完成'));
-      }
-    }, (err: Error) => {
-      this.initDefer.reject(err);
-    });
   }
   build() {
-    if (this.thumbnailPixelMap.value) {
-      Image(this.thumbnailPixelMap.value)
-        .border({ width: 1, color: Color.Black, style: BorderStyle.Solid })
-        .padding(0)
-        .margin(0)
-        .width('100%')
-        .objectFit(ImageFit.Contain)
-        .backgroundColor(Color.Transparent)
-        .fitOriginalSize(true)
-        .scale({
-          x: this.newScale,
-          y: this.newScale,
-          centerX: this.scaleOrigin.x,
-          centerY: this.scaleOrigin.y
+    Image(this.thumbnailUrl)
+      // .border({ width: 1, color: Color.Black, style: BorderStyle.Solid })
+      .padding(0)
+      .margin(0)
+      .width('100%')
+      .objectFit(ImageFit.Contain)
+      .backgroundColor(Color.Transparent)
+      .fitOriginalSize(true)
+      .scale({
+        x: this.newScale,
+        y: this.newScale,
+        centerX: this.scaleOrigin.x,
+        centerY: this.scaleOrigin.y
+      })
+      .translate({
+        x: this.newPan.x,
+        y: this.newPan.y
+      })
+      .parallelGesture(GestureGroup(
+        GestureMode.Parallel,
+        PinchGesture().onActionUpdate((event: GestureEvent) => {
+          if (!event.repeat && !this.isOnSwiperAnimation) {
+            this.newScale = this.oldScale * event.scale;
+            this.scaleOrigin.set(event.pinchCenterX, event.pinchCenterY);
+          }
+        }).onActionEnd(() => {
+          this.oldScale = this.newScale;
+        }),
+        PanGesture().onActionUpdate((event: GestureEvent) => {
+          if (!event.repeat && !this.isOnSwiperAnimation) {
+            this.newPan.copyFrom(this.oldPan.add(new Vector(event.offsetX, event.offsetY)));
+          }
+        }).onActionEnd(() => {
+          if (!this.isOnSwiperAnimation) {
+            this.oldPan.copyFrom(this.newPan);
+          }
         })
-        .translate({
-          x: this.newPan.x,
-          y: this.newPan.y
-        })
-        .parallelGesture(GestureGroup(
-          GestureMode.Parallel,
-          PinchGesture().onActionUpdate((event: GestureEvent) => {
-            if (!event.repeat && !this.isOnSwiperAnimation) {
-              this.newScale = this.oldScale * event.scale;
-              this.scaleOrigin.set(event.pinchCenterX, event.pinchCenterY);
-            }
-          }).onActionEnd(() => {
-            this.oldScale = this.newScale;
-          }),
-          PanGesture().onActionUpdate((event: GestureEvent) => {
-            if (!event.repeat && !this.isOnSwiperAnimation) {
-              this.newPan.copyFrom(this.oldPan.add(new Vector(event.offsetX, event.offsetY)));
-            }
-          }).onActionEnd(() => {
-            if (!this.isOnSwiperAnimation) {
-              this.oldPan.copyFrom(this.newPan);
-            }
-          })
-        ))
-    }
+      ))
+      .onComplete((event: ImageCompleteEvent) => {
+        if (event.loadingStatus == 1) {
+          this.init(event);
+        }
+      })
   }
 }
 @Entry
