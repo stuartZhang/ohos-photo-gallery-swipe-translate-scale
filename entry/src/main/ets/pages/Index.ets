@@ -1,4 +1,4 @@
-import axios, { AxiosResponse } from '@ohos/axios';
+import { vec2 } from '../libs/glMatrix/index';
 import image from '@ohos.multimedia.image';
 // ----------------------------------------------------------------------
 type PromiseState = 'resolved' | 'rejected' | 'pending';
@@ -38,36 +38,6 @@ class Ref<T> {
   }
 }
 // ----------------------------------------------------------------------
-@Observed
-class Vector {
-  x: number = Infinity;
-  y: number = Infinity;
-
-  constructor(x?: number, y?: number) {
-    this.set(x, y);
-  }
-  copyFrom(vector: Vector): Vector {
-    this.x = vector.x;
-    this.y = vector.y;
-    return this;
-  }
-  set(x = 0, y = 0): Vector {
-    this.x = x;
-    this.y = y;
-    return this;
-  }
-  add(vector: Vector): Vector {
-    return new Vector(
-      this.x + vector.x,
-      this.y + vector.y
-    );
-  }
-  zero(): Vector {
-    this.x = this.y = 0;
-    return this;
-  }
-}
-// ----------------------------------------------------------------------
 interface PictureInitData {
   pixelMap: PixelMap;
   info: image.ImageInfo;
@@ -83,13 +53,14 @@ interface ImageCompleteEvent {
   contentOffsetX: number;
   contentOffsetY: number;
 }
+type Vec2 = [number, number];
 @Component
 struct Picture {
   @State private newScale: number = 1;
   @State private oldScale: number = 1;
-  @State private scaleOrigin: Vector = new Vector();
-  @State private oldPan: Vector = new Vector();
-  @State private newPan: Vector = new Vector();
+  @State private scaleOrigin: Vec2 = vec2.create();
+  @State private oldPan: Vec2 = vec2.create();
+  @State private newPan: Vec2 = vec2.create();
 
   @Prop currentIndex: number;
   @Prop isOnSwiperAnimation: boolean;
@@ -101,9 +72,9 @@ struct Picture {
   }
   aboutToAppear(): void {
     this.newScale = this.oldScale = 1;
-    this.scaleOrigin.zero();
-    this.oldPan.zero();
-    this.newPan.zero();
+    this.scaleOrigin = vec2.zero(this.scaleOrigin);
+    this.oldPan = vec2.zero(this.oldPan);
+    this.newPan = vec2.zero(this.newPan);
   }
   build() {
     Image(this.thumbnailUrl)
@@ -117,30 +88,30 @@ struct Picture {
       .scale({
         x: this.newScale,
         y: this.newScale,
-        centerX: this.scaleOrigin.x,
-        centerY: this.scaleOrigin.y
+        centerX: this.scaleOrigin[0],
+        centerY: this.scaleOrigin[1]
       })
       .translate({
-        x: this.newPan.x,
-        y: this.newPan.y
+        x: this.newPan[0],
+        y: this.newPan[1]
       })
       .parallelGesture(GestureGroup(
         GestureMode.Parallel,
         PinchGesture().onActionUpdate((event: GestureEvent) => {
           if (!event.repeat && !this.isOnSwiperAnimation) {
             this.newScale = this.oldScale * event.scale;
-            this.scaleOrigin.set(event.pinchCenterX, event.pinchCenterY);
+            this.scaleOrigin = vec2.set(this.scaleOrigin, event.pinchCenterX, event.pinchCenterY);
           }
         }).onActionEnd(() => {
           this.oldScale = this.newScale;
         }),
         PanGesture().onActionUpdate((event: GestureEvent) => {
           if (!event.repeat && !this.isOnSwiperAnimation) {
-            this.newPan.copyFrom(this.oldPan.add(new Vector(event.offsetX, event.offsetY)));
+            this.newPan = vec2.add(this.newPan, this.oldPan, vec2.fromValues(event.offsetX, event.offsetY));
           }
         }).onActionEnd(() => {
           if (!this.isOnSwiperAnimation) {
-            this.oldPan.copyFrom(this.newPan);
+            this.oldPan = vec2.copy(this.oldPan, this.newPan);
           }
         })
       ))
